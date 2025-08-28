@@ -22,6 +22,25 @@
             width: 100%;
             border-radius: 1rem;
             overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+            min-height: 250px;
+        }
+        .animate-pulse-green {
+            animation: pulse-green 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-green {
+            0%, 100% {
+                box-shadow: 0 0 0 -5px rgba(16, 185, 129, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+        }
+        .badge {
+            @apply inline-flex items-center justify-center h-8 w-8 rounded-full text-white font-bold text-sm;
         }
     </style>
 </head>
@@ -36,6 +55,9 @@
         <div class="bg-teal-50 p-4 rounded-xl shadow-inner border border-teal-200">
             <p class="text-sm text-teal-700">Ваші бали: <span id="points" class="font-extrabold text-teal-900 text-2xl">0</span></p>
         </div>
+        <div class="flex justify-center flex-wrap gap-2 mt-4" id="badges-container">
+            <!-- Badges will be appended here dynamically -->
+        </div>
         <button id="start-scan-btn" class="w-full bg-teal-600 text-white font-semibold py-3 rounded-full hover:bg-teal-700 transition duration-300 shadow-md transform active:scale-95 focus:outline-none focus:ring-4 focus:ring-teal-300">
             Почати сканування
         </button>
@@ -43,7 +65,9 @@
 
     <div id="scan-screen" class="hidden space-y-4 transition-opacity duration-500">
         <h2 class="text-2xl font-bold text-center text-teal-600">Наведіть камеру на QR-код</h2>
-        <div id="reader"></div>
+        <div id="reader" class="animate-pulse-green">
+            <p id="reader-status" class="text-gray-500">Завантаження...</p>
+        </div>
         <button id="stop-scan-btn" class="w-full bg-red-600 text-white font-semibold py-3 rounded-full hover:bg-red-700 transition duration-300 shadow-md transform active:scale-95 focus:outline-none focus:ring-4 focus:ring-red-300">
             Зупинити сканування
         </button>
@@ -93,9 +117,12 @@
     const messageModal = document.getElementById('message-modal');
     const modalText = document.getElementById('modal-text');
     const modalCloseBtn = document.getElementById('modal-close-btn');
+    const badgesContainer = document.getElementById('badges-container');
+    const readerStatus = document.getElementById('reader-status');
 
     // Ключові змінні
     let qrCodeScanner;
+    let isScanning = false;
     let points = parseInt(localStorage.getItem('risk_app_points')) || 0;
     const scannedCodes = new Set(JSON.parse(localStorage.getItem('scanned_codes')) || []);
     const pointsPerScan = 10;
@@ -106,25 +133,33 @@
             title: 'Електрична небезпека',
             description: 'Ризик ураження електричним струмом від несправного обладнання або проводки.',
             prevention: 'Ніколи не торкайтесь пошкоджених проводів. Не ремонтуйте електрообладнання, якщо не маєте відповідного дозволу. Повідомте про несправність керівнику.',
-            video: 'https://placehold.co/400x225/38A169/FFFFFF?text=Відео+про+електрику'
+            video: 'https://placehold.co/400x225/38A169/FFFFFF?text=Відео+про+електрику',
+            color: 'bg-green-500',
+            emoji: '⚡️'
         },
         'RISK_FIRE': {
             title: 'Пожежна небезпека',
             description: 'Ризик виникнення пожежі через іскри, легкозаймисті матеріали або перевантаження мережі.',
             prevention: 'Переконайтесь, що поблизу немає легкозаймистих матеріалів. Знайте розташування вогнегасників. Не використовуйте несправне обладнання.',
-            video: 'https://placehold.co/400x225/EF4444/FFFFFF?text=Відео+про+пожежу'
+            video: 'https://placehold.co/400x225/EF4444/FFFFFF?text=Відео+про+пожежу',
+            color: 'bg-red-500',
+            emoji: '🔥'
         },
         'RISK_CHEMICAL': {
             title: 'Хімічна небезпека',
             description: 'Ризик отруєння або опіків від агресивних хімічних речовин.',
             prevention: 'Завжди використовуйте засоби індивідуального захисту (рукавички, окуляри). Не змішуйте невідомі хімікати. Зберігайте речовини в спеціально відведених місцях.',
-            video: 'https://placehold.co/400x225/8B5CF6/FFFFFF?text=Відео+про+хімікати'
+            video: 'https://placehold.co/400x225/8B5CF6/FFFFFF?text=Відео+про+хімікати',
+            color: 'bg-purple-500',
+            emoji: '🧪'
         },
         'RISK_SLIP_TRIP': {
             title: 'Небезпека падіння',
             description: 'Ризик посковзнутися або спіткнутися на мокрій підлозі, розкиданих предметах чи нерівній поверхні.',
             prevention: 'Прибирайте робоче місце. Завжди використовуйте спеціальне взуття. Повідомляйте про витік рідини або пошкодження підлоги.',
-            video: 'https://placehold.co/400x225/F97316/FFFFFF?text=Відео+про+падіння'
+            video: 'https://placehold.co/400x225/F97316/FFFFFF?text=Відео+про+падіння',
+            color: 'bg-orange-500',
+            emoji: '⚠️'
         },
     };
 
@@ -137,6 +172,20 @@
     // Функція для оновлення відображення балів
     function updatePointsDisplay() {
         pointsDisplay.textContent = points;
+    }
+
+    // Функція для оновлення бейджів
+    function updateBadges() {
+        badgesContainer.innerHTML = '';
+        scannedCodes.forEach(code => {
+            const risk = risksData[code];
+            if (risk) {
+                const badge = document.createElement('div');
+                badge.className = `badge ${risk.color}`;
+                badge.textContent = risk.emoji;
+                badgesContainer.appendChild(badge);
+            }
+        });
     }
 
     // Функція для показу модального вікна з повідомленням
@@ -164,19 +213,18 @@
     // Обробник успішного сканування
     const onScanSuccess = (decodedText, decodedResult) => {
         // Зупиняємо сканер, щоб уникнути повторного сканування
-        if (qrCodeScanner) {
+        if (isScanning) {
+            isScanning = false;
             qrCodeScanner.stop().then(() => {
                 handleDecodedText(decodedText);
             }).catch((err) => {
                 console.error(`Помилка зупинки сканера: ${err}`);
                 handleDecodedText(decodedText);
             });
-        } else {
-            handleDecodedText(decodedText);
         }
     };
     
-    // Нова функція для обробки розкодованого тексту, щоб уникнути дублювання
+    // Функція для обробки розкодованого тексту
     function handleDecodedText(decodedText) {
         if (risksData[decodedText]) {
             // Перевіряємо, чи цей код вже сканувався
@@ -185,6 +233,7 @@
                 scannedCodes.add(decodedText);
                 saveState();
                 updatePointsDisplay();
+                updateBadges(); // Оновлюємо бейджі
                 // Генеруємо контент результату
                 const risk = risksData[decodedText];
                 resultContent.innerHTML = `
@@ -209,37 +258,59 @@
         }
     }
 
-
     // Обробник помилок сканування
-    const onScanFailure = (error) => {
-        // Помилки сканування (наприклад, не розпізнаний QR-код). Не виводимо їх на екран.
-        console.warn(`Помилка сканування: ${error}`);
+    const onScanError = (error) => {
+        // Це повідомлення виводиться, якщо доступ до камери заборонено або виникли інші помилки
+        readerStatus.textContent = "Помилка доступу до камери. Переконайтесь, що ви надали дозвіл.";
+        console.error(`Помилка сканування: ${error}`);
     };
 
     // Обробник кліку на кнопку "Почати сканування"
     startScanBtn.addEventListener('click', () => {
+        isScanning = true;
         showScreen('scan-screen');
-        // Створюємо та запускаємо сканер
-        qrCodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-        qrCodeScanner.render(onScanSuccess, onScanFailure);
+        readerStatus.textContent = "Завантаження...";
+        
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        qrCodeScanner = new Html5Qrcode('reader');
+        
+        qrCodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, (error) => {
+             // Ми не хочемо показувати кожну помилку сканера, це робить UI менш зручним
+             // але якщо сканер взагалі не запускається, ми повідомляємо про це.
+             if (error.name === 'NotReadableError') {
+                onScanError(error);
+             }
+        })
+        .then(() => {
+            readerStatus.style.display = 'none'; // Приховати статус після запуску
+            document.getElementById('reader').classList.add('animate-pulse-green');
+        })
+        .catch(err => {
+            onScanError(err);
+        });
     });
 
     // Обробник кліку на кнопку "Зупинити сканування"
     stopScanBtn.addEventListener('click', () => {
-        if (qrCodeScanner) {
+        if (qrCodeScanner && isScanning) {
+            isScanning = false;
             qrCodeScanner.stop().then(() => {
                 showScreen('home-screen');
             }).catch(err => {
                 console.error(`Помилка зупинки сканера: ${err}`);
+                showScreen('home-screen');
             });
         } else {
             showScreen('home-screen');
         }
+        document.getElementById('reader').classList.remove('animate-pulse-green');
+        readerStatus.style.display = 'block';
     });
 
     // Обробник кліку на кнопку "Назад"
     backToHomeBtn.addEventListener('click', () => {
-        if (qrCodeScanner) {
+        if (qrCodeScanner && isScanning) {
+            isScanning = false;
             qrCodeScanner.stop().then(() => {
                 showScreen('home-screen');
             }).catch(err => {
@@ -249,12 +320,29 @@
         } else {
             showScreen('home-screen');
         }
+        document.getElementById('reader').classList.remove('animate-pulse-green');
+        readerStatus.style.display = 'block';
     });
 
     // Обробник кліку на кнопку "Сканувати ще"
     scanMoreBtn.addEventListener('click', () => {
+        // Перезапускаємо сканер знову
         showScreen('scan-screen');
-        qrCodeScanner.render(onScanSuccess, onScanFailure);
+        isScanning = true;
+        readerStatus.textContent = "Завантаження...";
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        qrCodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, (error) => {
+             if (error.name === 'NotReadableError') {
+                onScanError(error);
+             }
+        })
+        .then(() => {
+            readerStatus.style.display = 'none';
+            document.getElementById('reader').classList.add('animate-pulse-green');
+        })
+        .catch(err => {
+            onScanError(err);
+        });
     });
 
     // Обробник кліку на кнопку "Назад до головної" з екрану результатів
@@ -265,8 +353,9 @@
     // Обробник кліку на кнопку закриття модального вікна
     modalCloseBtn.addEventListener('click', hideModal);
 
-    // Ініціалізація балів при завантаженні сторінки
+    // Ініціалізація балів та бейджів при завантаженні сторінки
     updatePointsDisplay();
+    updateBadges();
 </script>
 
 </body>
