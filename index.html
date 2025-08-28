@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Безпека: Ваш Квест</title>
+    <!-- Tailwind CSS CDN для сучасного та адаптивного дизайну -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Шрифт Inter для кращої читабельності -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            @apply bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4;
+        }
+        .container {
+            @apply bg-white p-6 rounded-3xl shadow-2xl w-full max-w-md mx-auto;
+        }
+        #reader {
+            width: 100%;
+            border-radius: 1rem;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="home-screen" class="space-y-6 text-center transition-opacity duration-500">
+        <div class="flex flex-col items-center">
+            <h1 class="text-3xl font-bold text-teal-600 mb-2">QR-Квест Безпеки</h1>
+            <p class="text-lg text-gray-600">Скануйте коди, дізнавайтеся про ризики та заробляйте бали!</p>
+        </div>
+        <div class="bg-teal-50 p-4 rounded-xl shadow-inner border border-teal-200">
+            <p class="text-sm text-teal-700">Ваші бали: <span id="points" class="font-extrabold text-teal-900 text-2xl">0</span></p>
+        </div>
+        <button id="start-scan-btn" class="w-full bg-teal-600 text-white font-semibold py-3 rounded-full hover:bg-teal-700 transition duration-300 shadow-md transform active:scale-95 focus:outline-none focus:ring-4 focus:ring-teal-300">
+            Почати сканування
+        </button>
+    </div>
+
+    <div id="scan-screen" class="hidden space-y-4 transition-opacity duration-500">
+        <h2 class="text-2xl font-bold text-center text-teal-600">Наведіть камеру на QR-код</h2>
+        <div id="reader"></div>
+        <button id="stop-scan-btn" class="w-full bg-red-600 text-white font-semibold py-3 rounded-full hover:bg-red-700 transition duration-300 shadow-md transform active:scale-95 focus:outline-none focus:ring-4 focus:ring-red-300">
+            Зупинити сканування
+        </button>
+        <button id="back-to-home-btn" class="w-full mt-2 text-gray-500 font-semibold py-3 rounded-full hover:bg-gray-200 transition duration-300 focus:outline-none">
+            Назад до головної
+        </button>
+    </div>
+
+    <div id="result-screen" class="hidden space-y-6 transition-opacity duration-500">
+        <div id="result-content" class="text-center">
+            <!-- Згенерований контент буде тут -->
+        </div>
+        <button id="scan-more-btn" class="w-full bg-teal-600 text-white font-semibold py-3 rounded-full hover:bg-teal-700 transition duration-300 shadow-md transform active:scale-95 focus:outline-none focus:ring-4 focus:ring-teal-300">
+            Сканувати ще
+        </button>
+        <button id="back-to-home-from-result-btn" class="w-full mt-2 text-gray-500 font-semibold py-3 rounded-full hover:bg-gray-200 transition duration-300 focus:outline-none">
+            Назад до головної
+        </button>
+    </div>
+
+    <!-- Модальне вікно для повідомлень -->
+    <div id="message-modal" class="fixed inset-0 bg-gray-600 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full text-center">
+            <div id="modal-text" class="text-lg font-semibold mb-4 text-gray-700"></div>
+            <button id="modal-close-btn" class="w-full bg-teal-600 text-white font-semibold py-3 rounded-full hover:bg-teal-700 transition duration-300 focus:outline-none">
+                Закрити
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Бібліотека для сканування QR-кодів -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<script>
+    // Ініціалізація DOM-елементів
+    const homeScreen = document.getElementById('home-screen');
+    const scanScreen = document.getElementById('scan-screen');
+    const resultScreen = document.getElementById('result-screen');
+    const pointsDisplay = document.getElementById('points');
+    const startScanBtn = document.getElementById('start-scan-btn');
+    const stopScanBtn = document.getElementById('stop-scan-btn');
+    const backToHomeBtn = document.getElementById('back-to-home-btn');
+    const scanMoreBtn = document.getElementById('scan-more-btn');
+    const backToHomeFromResultBtn = document.getElementById('back-to-home-from-result-btn');
+    const resultContent = document.getElementById('result-content');
+    const messageModal = document.getElementById('message-modal');
+    const modalText = document.getElementById('modal-text');
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+
+    // Ключові змінні
+    let qrCodeScanner;
+    let points = parseInt(localStorage.getItem('risk_app_points')) || 0;
+    const scannedCodes = new Set(JSON.parse(localStorage.getItem('scanned_codes')) || []);
+    const pointsPerScan = 10;
+
+    // Дані про ризики. QR-коди повинні відповідати цим ключам.
+    const risksData = {
+        'RISK_ELECTRICAL': {
+            title: 'Електрична небезпека',
+            description: 'Ризик ураження електричним струмом від несправного обладнання або проводки.',
+            prevention: 'Ніколи не торкайтесь пошкоджених проводів. Не ремонтуйте електрообладнання, якщо не маєте відповідного дозволу. Повідомте про несправність керівнику.',
+            video: 'https://placehold.co/400x225/38A169/FFFFFF?text=Відео+про+електрику'
+        },
+        'RISK_FIRE': {
+            title: 'Пожежна небезпека',
+            description: 'Ризик виникнення пожежі через іскри, легкозаймисті матеріали або перевантаження мережі.',
+            prevention: 'Переконайтесь, що поблизу немає легкозаймистих матеріалів. Знайте розташування вогнегасників. Не використовуйте несправне обладнання.',
+            video: 'https://placehold.co/400x225/EF4444/FFFFFF?text=Відео+про+пожежу'
+        },
+        'RISK_CHEMICAL': {
+            title: 'Хімічна небезпека',
+            description: 'Ризик отруєння або опіків від агресивних хімічних речовин.',
+            prevention: 'Завжди використовуйте засоби індивідуального захисту (рукавички, окуляри). Не змішуйте невідомі хімікати. Зберігайте речовини в спеціально відведених місцях.',
+            video: 'https://placehold.co/400x225/8B5CF6/FFFFFF?text=Відео+про+хімікати'
+        },
+        'RISK_SLIP_TRIP': {
+            title: 'Небезпека падіння',
+            description: 'Ризик посковзнутися або спіткнутися на мокрій підлозі, розкиданих предметах чи нерівній поверхні.',
+            prevention: 'Прибирайте робоче місце. Завжди використовуйте спеціальне взуття. Повідомляйте про витік рідини або пошкодження підлоги.',
+            video: 'https://placehold.co/400x225/F97316/FFFFFF?text=Відео+про+падіння'
+        },
+    };
+
+    // Функція для збереження даних у локальному сховищі браузера
+    function saveState() {
+        localStorage.setItem('risk_app_points', points);
+        localStorage.setItem('scanned_codes', JSON.stringify(Array.from(scannedCodes)));
+    }
+
+    // Функція для оновлення відображення балів
+    function updatePointsDisplay() {
+        pointsDisplay.textContent = points;
+    }
+
+    // Функція для показу модального вікна з повідомленням
+    function showModal(text) {
+        modalText.textContent = text;
+        messageModal.classList.remove('hidden');
+        messageModal.classList.add('flex');
+    }
+
+    // Функція для приховування модального вікна
+    function hideModal() {
+        messageModal.classList.remove('flex');
+        messageModal.classList.add('hidden');
+    }
+
+    // Перемикання екранів
+    function showScreen(screenId) {
+        homeScreen.classList.add('hidden');
+        scanScreen.classList.add('hidden');
+        resultScreen.classList.add('hidden');
+
+        document.getElementById(screenId).classList.remove('hidden');
+    }
+
+    // Обробник успішного сканування
+    const onScanSuccess = (decodedText, decodedResult) => {
+        // Зупиняємо сканер, щоб уникнути повторного сканування
+        if (qrCodeScanner) {
+            qrCodeScanner.stop().then(() => {
+                handleDecodedText(decodedText);
+            }).catch((err) => {
+                console.error(`Помилка зупинки сканера: ${err}`);
+                handleDecodedText(decodedText);
+            });
+        } else {
+            handleDecodedText(decodedText);
+        }
+    };
+    
+    // Нова функція для обробки розкодованого тексту, щоб уникнути дублювання
+    function handleDecodedText(decodedText) {
+        if (risksData[decodedText]) {
+            // Перевіряємо, чи цей код вже сканувався
+            if (!scannedCodes.has(decodedText)) {
+                points += pointsPerScan;
+                scannedCodes.add(decodedText);
+                saveState();
+                updatePointsDisplay();
+                // Генеруємо контент результату
+                const risk = risksData[decodedText];
+                resultContent.innerHTML = `
+                    <h2 class="text-3xl font-bold text-teal-600 mb-2">${risk.title}</h2>
+                    <img src="${risk.video}" class="w-full rounded-xl mb-4" alt="Відео-заглушка">
+                    <div class="text-left space-y-4">
+                        <p><span class="font-bold">Опис:</span> ${risk.description}</p>
+                        <p><span class="font-bold">Як запобігти:</span> ${risk.prevention}</p>
+                    </div>
+                    <p class="mt-4 text-xl font-semibold text-green-600">
+                        🎉 Ви отримали +${pointsPerScan} балів!
+                    </p>
+                `;
+                showScreen('result-screen');
+            } else {
+                showModal('Цей QR-код вже був відсканований. Спробуйте знайти інший!');
+                showScreen('home-screen');
+            }
+        } else {
+            showModal('Це не код ризику. Спробуйте відсканувати інший QR-код.');
+            showScreen('home-screen');
+        }
+    }
+
+
+    // Обробник помилок сканування
+    const onScanFailure = (error) => {
+        // Помилки сканування (наприклад, не розпізнаний QR-код). Не виводимо їх на екран.
+        console.warn(`Помилка сканування: ${error}`);
+    };
+
+    // Обробник кліку на кнопку "Почати сканування"
+    startScanBtn.addEventListener('click', () => {
+        showScreen('scan-screen');
+        // Створюємо та запускаємо сканер
+        qrCodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        qrCodeScanner.render(onScanSuccess, onScanFailure);
+    });
+
+    // Обробник кліку на кнопку "Зупинити сканування"
+    stopScanBtn.addEventListener('click', () => {
+        if (qrCodeScanner) {
+            qrCodeScanner.stop().then(() => {
+                showScreen('home-screen');
+            }).catch(err => {
+                console.error(`Помилка зупинки сканера: ${err}`);
+            });
+        } else {
+            showScreen('home-screen');
+        }
+    });
+
+    // Обробник кліку на кнопку "Назад"
+    backToHomeBtn.addEventListener('click', () => {
+        if (qrCodeScanner) {
+            qrCodeScanner.stop().then(() => {
+                showScreen('home-screen');
+            }).catch(err => {
+                console.error(`Помилка зупинки сканера: ${err}`);
+                showScreen('home-screen');
+            });
+        } else {
+            showScreen('home-screen');
+        }
+    });
+
+    // Обробник кліку на кнопку "Сканувати ще"
+    scanMoreBtn.addEventListener('click', () => {
+        showScreen('scan-screen');
+        qrCodeScanner.render(onScanSuccess, onScanFailure);
+    });
+
+    // Обробник кліку на кнопку "Назад до головної" з екрану результатів
+    backToHomeFromResultBtn.addEventListener('click', () => {
+        showScreen('home-screen');
+    });
+
+    // Обробник кліку на кнопку закриття модального вікна
+    modalCloseBtn.addEventListener('click', hideModal);
+
+    // Ініціалізація балів при завантаженні сторінки
+    updatePointsDisplay();
+</script>
+
+</body>
+</html>
