@@ -212,11 +212,18 @@
 
     // Обробник успішного сканування
     const onScanSuccess = (decodedText, decodedResult) => {
-        // Зупиняємо сканер, щоб уникнути повторного сканування
+        // Зупиняємо сканер та оновлюємо статус
         if (isScanning) {
             isScanning = false;
             qrCodeScanner.stop().then(() => {
-                handleDecodedText(decodedText);
+                // Показуємо повідомлення про обробку
+                readerStatus.textContent = "Обробка...";
+                readerStatus.style.display = 'block';
+                document.getElementById('reader').classList.remove('animate-pulse-green');
+                // Запускаємо таймер на 1.5 секунди
+                setTimeout(() => {
+                    handleDecodedText(decodedText);
+                }, 1500); // Затримка 1.5 секунди
             }).catch((err) => {
                 console.error(`Помилка зупинки сканера: ${err}`);
                 handleDecodedText(decodedText);
@@ -260,7 +267,6 @@
 
     // Обробник помилок сканування
     const onScanError = (error) => {
-        // Це повідомлення виводиться, якщо доступ до камери заборонено або виникли інші помилки
         readerStatus.textContent = "Помилка доступу до камери. Переконайтесь, що ви надали дозвіл.";
         console.error(`Помилка сканування: ${error}`);
     };
@@ -275,8 +281,6 @@
         qrCodeScanner = new Html5Qrcode('reader');
         
         qrCodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, (error) => {
-             // Ми не хочемо показувати кожну помилку сканера, це робить UI менш зручним
-             // але якщо сканер взагалі не запускається, ми повідомляємо про це.
              if (error.name === 'NotReadableError') {
                 onScanError(error);
              }
